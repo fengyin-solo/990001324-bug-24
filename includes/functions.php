@@ -1,5 +1,13 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    session_start();
+}
 
 /**
  * 返回JSON响应
@@ -61,10 +69,84 @@ function timeAgo($datetime) {
 }
 
 /**
- * 检查管理员登录
+ * 发送禁止缓存响应头
+ * 防止浏览器缓存/回退缓存(bfcache)展示已失效的会话页面
  */
-function requireAdmin() {
-    if (empty($_SESSION['admin_id'])) {
+function sendNoCacheHeaders() {
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: Thu, 01 Jan 1970 00:00:00 GMT');
+}
+
+/**
+ * 确保 admins 表存在 session_token 字段（用于跨设备/跨标签页会话失效）
+ */
+function ensureAdminSessionColumn($db) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+    try {
+        $stmt = $db->query("SHOW COLUMNS FROM admins LIKE 'session_token'");
+        if (!$stmt->fetch()) {
+            $db->exec("ALTER TABLE admins ADD COLUMN session_token VARCHAR(64) DEFAULT NULL COMMENT '当前登录会话凭证' AFTER password");
+        }
+    } catch (PDOException $e) {
+        // 忽略异常，避免影响主流程；可通过 database/migration_admin_session_token.sql 手动迁移
+    }
+}
+
+/**
+ * 获取当前登录的管理员
+ * 校验会话中的登录凭证与服务端记录是否一致：
+ * 退出登录或在其他设备登录后，旧会话会立即失效。
+ * 返回管理员信息数组，未登录或会话已失效时返回 null。
+ */
+function getCurrentAdmin() {
+    static $cachedAdmin = false;
+    if ($cachedAdmin !== false) {
+        return $cachedAdmin;
+    }
+
+    if (empty($_SESSION['admin_id']) || empty($_SESSION['admin_token'])) {
+        return $cachedAdmin = null;
+    }
+
+    require_once __DIR__ . '/../config/database.php';
+    $db = getDB();
+    ensureAdminSessionColumn($db);
+
+    $stmt = $db->prepare("SELECT id, username, session_token FROM admins WHERE id = ?");
+    $stmt->execute([$_SESSION['admin_id']]);
+    $admin = $stmt->fetch();
+
+    if (!$admin || empty($admin['session_token']) || !hash_equals($admin['session_token'], $_SESSION['admin_token'])) {
+        return $cachedAdmin = null;
+    }
+
+    // 会话中展示的信息始终以服务端当前账号为准
+    $_SESSION['admin_name'] = $admin['username'];
+    return $cachedAdmin = $admin;
+}
+
+/**
+ * 清除本地会话中的管理员登录状态
+ */
+function clearAdminSession() {
+    unset($_SESSION['admin_id'], $_SESSION['admin_name'], $_SESSION['admin_token']);
+}
+
+/**
+ * 检查管理员登录
+ * @param bool $isApi 为 true 时未登录返回 JSON 401 响应，否则跳转登录页
+ */
+function requireAdmin($isApi = false) {
+    sendNoCacheHeaders();
+    if (!getCurrentAdmin()) {
+        clearAdminSession();
+        if ($isApi) {
+            http_response_code(401);
+            jsonResponse(401, '登录状态已失效，请重新登录');
+        }
         header('Location: login.php');
         exit;
     }

@@ -171,6 +171,21 @@ include __DIR__ . '/header.php';
 </div>
 
 <script>
+// 浏览器回退/前进缓存(bfcache)恢复页面时强制刷新，避免展示已失效的会话状态
+window.addEventListener('pageshow', function(e) {
+    if (e.persisted) location.reload();
+});
+
+// 统一处理接口响应：会话失效时跳转登录页
+function handleAdminResponse(data) {
+    if (data.code === 401) {
+        alert(data.msg || '登录状态已失效，请重新登录');
+        location.href = 'login.php';
+        return false;
+    }
+    return true;
+}
+
 function auditMessage(id, status) {
     const action = status === 1 ? '通过' : '拒绝';
     if (!confirm('确定要' + action + '这条留言吗？')) return;
@@ -181,13 +196,15 @@ function auditMessage(id, status) {
     })
     .then(r => r.json())
     .then(data => {
+        if (!handleAdminResponse(data)) return;
         if (data.code === 0) {
             alert('操作成功');
             location.reload();
         } else {
             alert(data.msg);
         }
-    });
+    })
+    .catch(() => alert('网络错误，请稍后重试'));
 }
 
 function deleteMessage(id) {
@@ -199,13 +216,15 @@ function deleteMessage(id) {
     })
     .then(r => r.json())
     .then(data => {
+        if (!handleAdminResponse(data)) return;
         if (data.code === 0) {
             alert('删除成功');
             location.reload();
         } else {
             alert(data.msg);
         }
-    });
+    })
+    .catch(() => alert('网络错误，请稍后重试'));
 }
 
 function viewMessage(id) {
@@ -214,6 +233,7 @@ function viewMessage(id) {
     fetch('api.php?action=detail&id=' + id)
     .then(r => r.json())
     .then(data => {
+        if (!handleAdminResponse(data)) return;
         if (data.code === 0) {
             const d = data.data;
             let html = '<div class="detail-view">';
@@ -231,6 +251,9 @@ function viewMessage(id) {
         } else {
             document.getElementById('modalBody').innerHTML = data.msg;
         }
+    })
+    .catch(() => {
+        document.getElementById('modalBody').innerHTML = '网络错误，请稍后重试';
     });
 }
 

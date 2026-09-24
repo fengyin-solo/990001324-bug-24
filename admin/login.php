@@ -1,19 +1,22 @@
 <?php
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../config/database.php';
+
+sendNoCacheHeaders();
 
 $pageTitle = '后台登录 - 社区便民留言板';
 $cssPath = '../assets/css/style.css';
 $jsPath = '../assets/js/main.js';
 
-// 已登录则跳转
-if (!empty($_SESSION['admin_id'])) {
+// 已登录（且会话凭证有效）则跳转；否则清除残留的旧会话状态
+if (getCurrentAdmin()) {
     header('Location: index.php');
     exit;
 }
+clearAdminSession();
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_once __DIR__ . '/../config/database.php';
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -21,13 +24,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = '请输入用户名和密码';
     } else {
         $db = getDB();
+        ensureAdminSessionColumn($db);
         $stmt = $db->prepare("SELECT * FROM admins WHERE username = ?");
         $stmt->execute([$username]);
         $admin = $stmt->fetch();
 
         if ($admin && password_verify($password, $admin['password'])) {
+            // 签发新的会话凭证，使其他设备/旧会话全部失效
+            $token = bin2hex(random_bytes(32));
+            $db->prepare("UPDATE admins SET session_token = ? WHERE id = ?")->execute([$token, $admin['id']]);
+
+            // 重建会话并清除旧会话残留数据，再写入当前账号信息
+            session_regenerate_id(true);
+            $_SESSION = [];
             $_SESSION['admin_id'] = $admin['id'];
             $_SESSION['admin_name'] = $admin['username'];
+            $_SESSION['admin_token'] = $token;
             header('Location: index.php');
             exit;
         } else {

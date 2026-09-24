@@ -39,6 +39,7 @@ try {
         `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         `username` VARCHAR(50) NOT NULL UNIQUE,
         `password` VARCHAR(255) NOT NULL,
+        `session_token` VARCHAR(64) DEFAULT NULL COMMENT '当前登录会话凭证',
         `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员表'");
 

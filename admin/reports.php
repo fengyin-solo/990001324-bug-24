@@ -221,12 +221,28 @@ include __DIR__ . '/header.php';
 let pendingProcessId = null;
 let pendingProcessStatus = null;
 
+// 浏览器回退/前进缓存(bfcache)恢复页面时强制刷新，避免展示已失效的会话状态
+window.addEventListener('pageshow', function(e) {
+    if (e.persisted) location.reload();
+});
+
+// 统一处理接口响应：会话失效时跳转登录页
+function handleAdminResponse(data) {
+    if (data.code === 401) {
+        alert(data.msg || '登录状态已失效，请重新登录');
+        location.href = 'login.php';
+        return false;
+    }
+    return true;
+}
+
 function viewReport(id) {
     document.getElementById('reportViewModal').style.display = 'flex';
     document.getElementById('reportViewBody').innerHTML = '加载中...';
     fetch('api.php?action=report_detail&id=' + id)
     .then(r => r.json())
     .then(data => {
+        if (!handleAdminResponse(data)) return;
         if (data.code === 0) {
             const d = data.data;
             let html = '<div class="detail-view">';
@@ -265,6 +281,9 @@ function viewReport(id) {
         } else {
             document.getElementById('reportViewBody').innerHTML = data.msg;
         }
+    })
+    .catch(() => {
+        document.getElementById('reportViewBody').innerHTML = '网络错误，请稍后重试';
     });
 }
 
@@ -315,6 +334,7 @@ function confirmProcess() {
     })
     .then(r => r.json())
     .then(data => {
+        if (!handleAdminResponse(data)) return;
         if (data.code === 0) {
             alert('操作成功');
             closeProcessNoteModal();
@@ -322,7 +342,8 @@ function confirmProcess() {
         } else {
             alert(data.msg);
         }
-    });
+    })
+    .catch(() => alert('网络错误，请稍后重试'));
 }
 
 document.getElementById('reportViewModal').addEventListener('click', function(e) {

@@ -40,6 +40,16 @@ try {
         `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员表'");
 
+    // 管理员当前有效登录表：同一账号只保留最新一次登录
+    $pdo->exec("CREATE TABLE IF NOT EXISTS `active_admin_logins` (
+        `admin_id` INT UNSIGNED NOT NULL PRIMARY KEY,
+        `session_id` VARCHAR(128) NOT NULL,
+        `login_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY `uk_session_id` (`session_id`),
+        FOREIGN KEY (`admin_id`) REFERENCES `admins` (`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员当前有效登录'");
+
     // 收藏表
     $pdo->exec("CREATE TABLE IF NOT EXISTS `favorites` (
         `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -1,5 +1,62 @@
 <?php
-session_start();
+function startAppSession() {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return;
+    }
+
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') == 443)
+        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    session_start();
+}
+
+startAppSession();
+
+/**
+ * 确保管理员单点登录记录表存在
+ */
+function ensureAdminSessionSchema(PDO $db = null) {
+    static $checked = false;
+    if ($checked) {
+        return;
+    }
+
+    if ($db === null) {
+        require_once __DIR__ . '/../config/database.php';
+        $db = getDB();
+    }
+
+    $db->exec("CREATE TABLE IF NOT EXISTS `active_admin_logins` (
+        `admin_id` INT UNSIGNED NOT NULL PRIMARY KEY,
+        `session_id` VARCHAR(128) NOT NULL,
+        `login_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY `uk_session_id` (`session_id`),
+        CONSTRAINT `fk_active_admin` FOREIGN KEY (`admin_id`)
+            REFERENCES `admins` (`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='管理员当前有效登录'");
+
+    $checked = true;
+}
+
+/**
+ * 清除当前请求中的管理员登录状态
+ */
+function clearAdminIdentity() {
+    unset($_SESSION['admin_id'], $_SESSION['admin_name']);
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+}
 
 /**
  * 返回JSON响应
@@ -65,9 +122,72 @@ function timeAgo($datetime) {
  */
 function requireAdmin() {
     if (empty($_SESSION['admin_id'])) {
-        header('Location: login.php');
+        unauthorized();
+    }
+
+    require_once __DIR__ . '/../config/database.php';
+    $db = getDB();
+    $admin = getAuthenticatedAdmin($db);
+
+    if (!$admin) {
+        clearAdminIdentity();
+        unauthorized();
+    }
+
+    // 每次受保护请求都以数据库中的当前账号为准，避免会话里残留旧名称。
+    $_SESSION['admin_id'] = (int) $admin['id'];
+    $_SESSION['admin_name'] = $admin['username'];
+}
+
+/**
+ * 获取当前会话对应的有效管理员
+ */
+function getAuthenticatedAdmin(PDO $db) {
+    if (empty($_SESSION['admin_id'])) {
+        return null;
+    }
+
+    ensureAdminSessionSchema($db);
+
+    $sessionHash = hash('sha256', session_id());
+    $stmt = $db->prepare("
+        SELECT a.id, a.username
+        FROM active_admin_logins l
+        INNER JOIN admins a ON a.id = l.admin_id
+        WHERE l.admin_id = ? AND l.session_id = ?
+    ");
+    $stmt->execute([$_SESSION['admin_id'], $sessionHash]);
+    return $stmt->fetch() ?: null;
+}
+
+/**
+ * 未登录或登录已失效时的统一响应
+ */
+function unauthorized() {
+    http_response_code(401);
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    $httpAccept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    $isApi = (
+        strpos($requestUri, '/admin/api.php') !== false
+        || strcasecmp($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '', 'XMLHttpRequest') === 0
+        || strpos($httpAccept, 'application/json') !== false
+    );
+
+    if ($isApi) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'code' => 401,
+            'msg' => '登录状态已失效，请重新登录',
+            'data' => ['redirect' => 'login.php?expired=1'],
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
+
+    header('Location: login.php?expired=1');
+    exit;
 }
 
 /**

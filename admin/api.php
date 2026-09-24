@@ -3,12 +3,21 @@ require_once __DIR__ . '/../includes/functions.php';
 require_once __DIR__ . '/../config/database.php';
 requireAdmin();
 
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 header('Content-Type: application/json; charset=utf-8');
 
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $db = getDB();
 
 switch ($action) {
+    case 'session':
+        jsonResponse(0, 'ok', [
+            'id' => (int) $_SESSION['admin_id'],
+            'name' => $_SESSION['admin_name'],
+        ]);
+        break;
+
     case 'detail':
         $id = intval($_GET['id'] ?? 0);
         $stmt = $db->prepare("SELECT * FROM messages WHERE id = ?");

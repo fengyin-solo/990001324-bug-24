@@ -225,8 +225,18 @@ function viewReport(id) {
     document.getElementById('reportViewModal').style.display = 'flex';
     document.getElementById('reportViewBody').innerHTML = '加载中...';
     fetch('api.php?action=report_detail&id=' + id)
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            window.location.replace('login.php?expired=1');
+            throw new Error('未登录');
+        }
+        return r.json();
+    })
     .then(data => {
+        if (data.code === 401) {
+            window.location.replace((data.data && data.data.redirect) || 'login.php?expired=1');
+            return;
+        }
         if (data.code === 0) {
             const d = data.data;
             let html = '<div class="detail-view">';
@@ -264,6 +274,11 @@ function viewReport(id) {
             document.getElementById('reportViewBody').innerHTML = html;
         } else {
             document.getElementById('reportViewBody').innerHTML = data.msg;
+        }
+    })
+    .catch(error => {
+        if (error.message !== '未登录') {
+            document.getElementById('reportViewBody').innerHTML = '加载失败，请稍后重试';
         }
     });
 }
@@ -313,8 +328,18 @@ function confirmProcess() {
         method: 'POST',
         body: formData
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            window.location.replace('login.php?expired=1');
+            throw new Error('未登录');
+        }
+        return r.json();
+    })
     .then(data => {
+        if (data.code === 401) {
+            window.location.replace((data.data && data.data.redirect) || 'login.php?expired=1');
+            return;
+        }
         if (data.code === 0) {
             alert('操作成功');
             closeProcessNoteModal();
@@ -322,6 +347,9 @@ function confirmProcess() {
         } else {
             alert(data.msg);
         }
+    })
+    .catch(error => {
+        if (error.message !== '未登录') alert('网络错误，请稍后重试');
     });
 }
 

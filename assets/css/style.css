@@ -395,9 +395,11 @@ a:hover { color: var(--primary-dark); }
 .login-footer { text-align: center; margin-top: 16px; }
 .alert { padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 16px; font-size: .9rem; }
 .alert-error { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
+.alert-success { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
 
 /* ========== Admin ========== */
 .admin-body { background: var(--gray-100); }
+body[data-auth-invalid] { visibility: hidden; }
 .admin-container { display: flex; min-height: 100vh; }
 .admin-sidebar {
     width: 220px;
